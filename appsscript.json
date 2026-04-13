@@ -1,0 +1,28 @@
+{
+  "timeZone": "America/New_York",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.addons.execute",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/script.locale",
+    "https://www.googleapis.com/auth/spreadsheets"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Gmail Phishing Reporter",
+      "logoUrl": "https://developers.google.com/workspace/add-ons/images/quickstart-logo-app.png",
+      "layoutProperties": {
+        "primaryColor": "#4285F4"
+      }
+    },
+    "gmail": {
+      "contextualTriggers": [
+        {
+          "unconditional": {},
+          "onTriggerFunction": "buildAddOn"
+        }
+      ]
+    }
+  }
+}
