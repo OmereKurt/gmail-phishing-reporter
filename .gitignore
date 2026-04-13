@@ -1,0 +1,16 @@
+# Apps Script (clasp)
+.clasp.json
+.claspignore
+
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Node (future-proof)
+node_modules/
