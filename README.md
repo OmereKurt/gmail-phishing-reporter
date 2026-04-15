@@ -1,4 +1,4 @@
-# 🛡️ Gmail Phishing Reporting & Response Add-on
+# 🛡️ Gmail Phishing Reporting & Response Add-o
 
 ## 🔍 Overview
 Gmail Phishing Reporter is a Google Workspace add-on that enables users to report phishing or suspicious emails directly within the Gmail interface.  
