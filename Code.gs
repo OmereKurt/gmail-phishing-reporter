@@ -5,7 +5,7 @@ function buildAddOn(e) {
   const section = CardService.newCardSection()
     .addWidget(
       CardService.newTextParagraph().setText(
-        "Report this email as phishing or scam.
+        "Report this email as phishing or scam."
       )
     )
     .addWidget(
