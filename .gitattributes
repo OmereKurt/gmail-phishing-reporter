@@ -1,0 +1,6 @@
+# Without this, line endings depend on whoever checked the repository out.
+# core.autocrlf on Windows rewrites the working tree to CRLF, which makes
+# `npm run sync:check` fail on a byte comparison against a header this repo
+# generates with LF -- a drift report for a file that has not drifted.
+# Pinning the working tree to LF everywhere keeps that check meaningful.
+* text=auto eol=lf
