@@ -1,0 +1,16 @@
+{
+  "name": "gmail-phishing-reporter",
+  "version": "2.0.0",
+  "description": "Google Workspace add-on that reports, removes and logs phishing email from within Gmail.",
+  "license": "MIT",
+  "author": "Omer Kurt",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "sync": "node scripts/sync-appsscript.js",
+    "sync:check": "node scripts/sync-appsscript.js --check"
+  }
+}
