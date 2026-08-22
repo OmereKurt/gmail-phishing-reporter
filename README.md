@@ -194,10 +194,10 @@ product:
   it now describes is real.
 
 > **Note on history:** the spreadsheet id removed in 2.0 is still present in this
-> repository's git history, and always will be unless the history is rewritten. A
-> Sheets id is not a credential — access is governed by the sheet's sharing
-> settings — but it is worth confirming that sheet is not shared with "anyone
-> with the link."
+> repository's git history. A Sheets id is not a credential — access is governed by
+> the sheet's sharing settings, and that sheet is restricted, so the id grants
+> nothing to anyone who finds it. It was left in place rather than rewriting every
+> commit sha to remove an identifier that opens no door.
 
 ## Licence
 
