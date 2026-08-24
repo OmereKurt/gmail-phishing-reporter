@@ -37,6 +37,11 @@
   const SHEET_NAME_PROPERTY = "PHISHING_LOG_SHEET_NAME";
   const DEFAULT_SHEET_NAME = "Phishing Reports";
 
+  // Triage columns are appended AFTER Status rather than grouped with the
+  // sender fields, so a log created by an earlier version keeps every existing
+  // column meaning the same and simply gains empty trailing cells. It also
+  // keeps STATUS_COLUMN where it was, which is the one index written by
+  // position after the row is appended.
   const LOG_HEADERS = [
     "Timestamp",
     "Reporter",
@@ -45,7 +50,16 @@
     "Message ID",
     "Thread ID",
     "Action",
-    "Status"
+    "Status",
+    "SPF",
+    "DKIM",
+    "DMARC",
+    "Indicators",
+    "Sender Domain",
+    "Reply-To",
+    "URL Count",
+    "URLs",
+    "Attachments"
   ];
 
   const STATUS_COLUMN = LOG_HEADERS.indexOf("Status") + 1;
@@ -113,6 +127,12 @@
    */
   function buildLogRow(report) {
     const source = report || {};
+    const finding = source.triage || {};
+    const auth = finding.authentication || {};
+    const sender = finding.sender || {};
+    const urls = finding.urls || [];
+    const attachments = finding.attachments || [];
+
     return [
       source.timestamp,
       source.reporter,
@@ -121,7 +141,18 @@
       source.messageId,
       source.threadId,
       source.action,
-      source.status
+      source.status,
+      auth.spf || "",
+      auth.dkim || "",
+      auth.dmarc || "",
+      (finding.indicators || []).join(", "),
+      sender.domain || "",
+      sender.replyTo || "",
+      urls.length,
+      // Already defanged by the triage module. Capped because a cell is not a
+      // place to put forty links, and the full set goes to the JSON record.
+      urls.slice(0, 5).map(u => u.url).join("\n"),
+      attachments.map(a => a.name + (a.notable ? " (notable)" : "")).join("\n")
     ].map(sanitizeCell);
   }
 

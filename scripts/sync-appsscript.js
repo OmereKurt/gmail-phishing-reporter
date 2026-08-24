@@ -16,43 +16,60 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
-const SOURCE = path.join(ROOT, "src", "report-log.js");
-const TARGET = path.join(ROOT, "ReportLog.gs");
+// Apps Script has no module system: every .gs shares one global scope, so a
+// pure module cannot be require()d there. Each entry is copied verbatim instead,
+// and --check fails CI the moment a copy drifts from its source.
+const MODULES = [
+  { source: path.join(ROOT, "src", "report-log.js"), target: path.join(ROOT, "ReportLog.gs") },
+  { source: path.join(ROOT, "src", "triage.js"), target: path.join(ROOT, "Triage.gs") }
+];
 
-const HEADER = [
-  "// ============================================================",
-  "// GENERATED FILE - DO NOT EDIT",
-  "//",
-  "// Copied verbatim from src/report-log.js by scripts/sync-appsscript.js.",
-  "// Edit the source, then run: npm run sync",
-  "// CI runs `npm run sync:check` and fails if these two drift apart.",
-  "// ============================================================",
-  ""
-].join("\n");
+function header(sourceName) {
+  return [
+    "// ============================================================",
+    "// GENERATED FILE - DO NOT EDIT",
+    "//",
+    "// Copied verbatim from " + sourceName + " by scripts/sync-appsscript.js.",
+    "// Edit the source, then run: npm run sync",
+    "// CI runs `npm run sync:check` and fails if these two drift apart.",
+    "// ============================================================",
+    ""
+  ].join("\n");
+}
 
-function build() {
-  return HEADER + "\n" + fs.readFileSync(SOURCE, "utf8");
+function build(module) {
+  const sourceName = path.relative(ROOT, module.source).split(path.sep).join("/");
+  return header(sourceName) + "\n" + fs.readFileSync(module.source, "utf8");
 }
 
 function main() {
-  const expected = build();
   const check = process.argv.includes("--check");
+  let drifted = 0;
 
-  if (check) {
-    const actual = fs.existsSync(TARGET) ? fs.readFileSync(TARGET, "utf8") : null;
-    if (actual !== expected) {
-      console.error(
-        "ReportLog.gs is out of sync with src/report-log.js.\n" +
-          "Run `npm run sync` and commit the result."
-      );
-      process.exit(1);
+  for (const module of MODULES) {
+    const expected = build(module);
+    const targetName = path.relative(ROOT, module.target);
+    const sourceName = path.relative(ROOT, module.source).split(path.sep).join("/");
+
+    if (check) {
+      const actual = fs.existsSync(module.target) ? fs.readFileSync(module.target, "utf8") : null;
+      if (actual !== expected) {
+        console.error(targetName + " is out of sync with " + sourceName + ".");
+        drifted++;
+      } else {
+        console.log(targetName + " is in sync with " + sourceName + ".");
+      }
+      continue;
     }
-    console.log("ReportLog.gs is in sync with src/report-log.js.");
-    return;
+
+    fs.writeFileSync(module.target, expected);
+    console.log("Wrote " + targetName + " from " + sourceName + ".");
   }
 
-  fs.writeFileSync(TARGET, expected);
-  console.log("Wrote " + path.relative(ROOT, TARGET) + " from src/report-log.js.");
+  if (check && drifted) {
+    console.error("\nRun `npm run sync` and commit the result.");
+    process.exit(1);
+  }
 }
 
 main();

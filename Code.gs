@@ -183,7 +183,8 @@ function reportPhishing(e) {
       messageId: message.getId(),
       threadId: message.getThread().getId(),
       action: "Move message to Trash",
-      status: ReportLog.STATUS_PENDING
+      status: ReportLog.STATUS_PENDING,
+      triage: triageMessage(message)
     };
   } catch (err) {
     return notify("Could not read the message: " + err.message);
@@ -217,6 +218,35 @@ function reportPhishing(e) {
       CardService.newNotification().setText("Reported, removed and logged")
     )
     .build();
+}
+
+/**
+ * Run the triage analysis over a message.
+ *
+ * Wrapped because the analysis is an enhancement to the report, not a
+ * precondition for it. If getRawContent throws -- an oversized message, a
+ * transient Gmail failure -- the report must still be logged and the mail must
+ * still be removed. Losing the SPF verdict is a worse log; losing the report
+ * because the SPF verdict could not be read would be a worse product.
+ *
+ * Nothing here needs a scope the add-on did not already hold: gmail.modify
+ * covers raw content and attachments.
+ */
+function triageMessage(message) {
+  try {
+    return Triage.triage({
+      rawHeaders: message.getRawContent().split(/\r?\n\r?\n/)[0],
+      from: message.getFrom(),
+      replyTo: message.getReplyTo(),
+      body: message.getPlainBody(),
+      attachments: message.getAttachments({ includeInlineImages: false }).map(function (a) {
+        return { name: a.getName(), contentType: a.getContentType(), bytes: a.getSize() };
+      })
+    });
+  } catch (err) {
+    console.error("Triage failed, logging the report without it: " + err.message);
+    return { authentication: {}, sender: {}, urls: [], attachments: [], indicators: ["triage-failed"] };
+  }
 }
 
 function getOrCreateLabel() {

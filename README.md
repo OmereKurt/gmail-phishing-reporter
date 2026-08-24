@@ -3,11 +3,12 @@
 [![CI](https://github.com/OmereKurt/gmail-phishing-reporter/actions/workflows/ci.yml/badge.svg)](https://github.com/OmereKurt/gmail-phishing-reporter/actions/workflows/ci.yml)
 
 A Google Workspace add-on that lets a user report a phishing email from inside
-Gmail. The reported message is written to an audit log, labelled, and moved to
-Trash — in that order, and only in that order.
+Gmail. The reported message is **triaged**, written to an audit log, labelled,
+and moved to Trash — in that order, and only in that order.
 
-The add-on is small. The design decisions about *when* things happen, and about
-what the reported email is allowed to do to the log, are the part worth reading.
+The add-on is small. The design decisions about *when* things happen, about what
+the reported email is allowed to do to the log, and about what is worth
+extracting before the evidence is destroyed, are the part worth reading.
 
 ## Audit before action
 
@@ -64,6 +65,59 @@ Two details that a first attempt gets wrong, both covered by tests:
   which let exactly that case through. There is now a regression test named for
   it.
 
+## Triage, not just reporting
+
+Version 1 recorded four things — sender, subject, and two ids — and deleted the
+mail. That is a report, not a triage. None of it answered the questions an
+analyst asks first, and all of those answers were sitting in headers that were
+being thrown away seconds before the evidence went to Trash.
+
+[`src/triage.js`](src/triage.js) now extracts them. It is pure — no Gmail,
+Sheets or CardService APIs — which is why the whole analysis can be tested
+without a mailbox.
+
+| What it reads | Why it matters |
+|---|---|
+| `Authentication-Results` → SPF, DKIM, DMARC, compauth | Did the message authenticate at all |
+| Display name vs sending domain | `"Microsoft Support" <billing@evil-host.ru>` — the whole BEC genre |
+| `Reply-To` and `Return-Path` divergence | Where a reply actually goes |
+| URLs in the body | Shorteners, IP literals, credential paths |
+| Attachments | Double extensions and the archive/script formats worth naming |
+
+The result lands in the log as `SPF`, `DKIM`, `DMARC`, `Indicators`,
+`Sender Domain`, `Reply-To`, `URL Count`, `URLs` and `Attachments`.
+
+**Three details that a first attempt gets wrong**, all covered by tests:
+
+- **`Authentication-Results` is folded.** It is nearly always wrapped across
+  several continuation lines, so reading only the first line silently drops the
+  DKIM and DMARC verdicts and reports them as absent.
+- **Take the last copy of the header, not the first.** An attacker can prepend
+  their own `Authentication-Results: spf=pass`, but they cannot stop the
+  receiving MTA appending the real one after it.
+- **Absent is not `fail`, and neither is `none`.** A method that did not run is
+  reported as `absent` rather than defaulted, because "no SPF record" and "SPF
+  failed" lead to different conclusions.
+
+Every URL is defanged before it is stored or displayed, and every value still
+passes through `sanitizeCell` on the way to the sheet — the triage fields are
+derived from the reported message, so they are exactly as attacker-controlled
+as the subject line was.
+
+The brand list behind the display-name check is deliberately small. Every entry
+is a false-positive surface: an internal team legitimately called "Apple Program
+Office" would trip an entry for `apple`. It is a starting point to tune per
+tenant, not a canonical set.
+
+**Triage never blocks the report.** If `getRawContent` throws — an oversized
+message, a transient Gmail failure — the finding is dropped, `triage-failed` is
+recorded, and the report is still logged and the mail still removed. A worse log
+is a bad outcome; losing the report because the SPF verdict could not be read
+would be a worse one.
+
+No new OAuth scope was needed: `gmail.modify` already covered raw content and
+attachments.
+
 ## One message, not the whole conversation
 
 Version 1 called `moveThreadToTrash`, which takes every message in the thread.
@@ -109,18 +163,32 @@ The log tab and its header row are created on first use.
 |---|---|---|---|---|---|---|---|
 | 2026-04-13 09:14:02 | analyst@example.com | billing@evil.tld | Verify Account | 18f2… | 18f2… | Move message to Trash | Moved to Trash |
 
+…followed by the triage columns:
+
+| SPF | DKIM | DMARC | Indicators | Sender Domain | Reply-To | URL Count | URLs | Attachments |
+|---|---|---|---|---|---|---|---|---|
+| fail | fail | fail | spf:fail, display-name-spoof, shortened-url | evil.tld | collect@other.tld | 2 | hxxps://bit[.]ly/3xAbCd | invoice.pdf.exe (notable) |
+
+Triage columns are appended **after** `Status`, so a log created by an earlier
+version keeps every existing column meaning and simply gains empty trailing
+cells.
+
 ## Repository structure
 
 ```
 src/report-log.js        The audit log core. Pure: no Gmail, Sheets, Properties
                          or CardService APIs, which is what makes it testable.
+src/triage.js            Header, sender, URL and attachment analysis. Also pure.
 ReportLog.gs             Generated copy of src/report-log.js (npm run sync).
+Triage.gs                Generated copy of src/triage.js (npm run sync).
 Code.gs                  Add-on entry points. Everything that touches a Google
                          API lives here: cards, Gmail calls, sheet access.
 appsscript.json          Manifest: OAuth scopes and the Gmail contextual trigger.
-test/report-log.test.js  24 tests: sanitising, row building, config, and the
+test/report-log.test.js  26 tests: sanitising, row building, config, and the
                          Apps Script global-scope load path.
-scripts/sync-appsscript.js  Copies the core into ReportLog.gs; --check guards drift.
+test/triage.test.js      32 tests: folded headers, auth results, display-name
+                         spoofing, URL extraction, attachments.
+scripts/sync-appsscript.js  Copies both pure modules into .gs; --check guards drift.
 .github/workflows/ci.yml    Runs sync:check and the test suite.
 ```
 
@@ -134,7 +202,7 @@ and CI fails if the two drift apart.
 Requires Node 20+. There are no dependencies to install.
 
 ```bash
-npm test          # 24 tests
+npm test          # 58 tests
 npm run sync      # regenerate ReportLog.gs from src/report-log.js
 npm run sync:check
 ```
@@ -164,9 +232,20 @@ npm run sync:check
 Worth being direct about, because the tests above cover the log and not the
 product:
 
-- **Nothing here detects phishing.** A user decides what is malicious; the add-on
-  records and removes what they report. There is no scoring, no rules, no
-  analysis of the message.
+- **Nothing here decides what is phishing.** A user decides; the add-on triages,
+  records and removes what they report. The indicators describe the message —
+  they do not score it, and a message with every indicator clear is not thereby
+  safe. Reporting remains a human judgement.
+- **The triage is header and string analysis only.** No sender reputation, no
+  URL detonation, no attachment sandboxing, no threat-intel lookup. Nothing in
+  this repository resolves or fetches anything a reported message points at.
+- **Attachment hashes are not computed.** The finding carries a `sha256` field
+  and the add-on leaves it null: hashing attachment bytes inside the report path
+  risks the Apps Script execution limit on exactly the large attachments most
+  worth hashing. The field is there for a caller that can afford it.
+- **The brand list is small and hand-picked.** It covers the brands that
+  dominate credential lures, and every entry is a false-positive surface for an
+  organisation whose own teams share a name with one. Tune it per tenant.
 - **No undo.** The message is in Trash and recoverable by hand for 30 days, but
   the add-on offers no restore action and the log has no way to mark a report as
   withdrawn.
